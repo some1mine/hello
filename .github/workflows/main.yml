@@ -1,0 +1,49 @@
+name: 빌드 및 배포 
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  USERNAME: thedeny1106
+
+jobs:
+  build-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 원격 저장소에서 소스를 복사
+        uses: actions/checkout@v3
+
+      - name: gradlew 실행 권한 설정 
+        run: chmod +x gradlew
+        
+      - name: 소스파일을 docker이미지로 빌드한다
+        run: ./gradlew bootBuildImage --imageName ${{env.USERNAME}}/hello:latest
+      
+      - name: docker hub에 로그인을 한다
+        run: docker login -u ${{env.USERNAME}} -p ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 생성된 이미지를 docker hub에 push 한다
+        run: docker push ${{env.USERNAME}}/hello:latest
+
+  deploy:
+    needs: build-docker-image
+    name: deploy
+    runs-on: [ self-hosted, label-kosa2]
+    steps:
+      - name: 기존에 실행중인 서비스를 제거한다 
+        run: docker service rm hello-app
+
+      - name: docker hub에 로그인을 한다
+        run: docker login -u ${{env.USERNAME}} -p ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 생성된 이미지를 docker hub에 pull로 내려 받는다
+        run: docker pull ${{env.USERNAME}}/hello:latest
+
+      - name: 서비스 실행
+        run: |
+          docker service create \
+                --name hello-app \
+                --publish published=8001,target=8080 \
+                --replicas 3 \
+                ${{env.USERNAME}}/hello:latest      
